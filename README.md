@@ -8,7 +8,7 @@
 Streamlit-Authenticator is distributed via [PyPI](https://pypi.org/project/streamlit-authenticator/):
 
 ```python
-pip install streamlit-authenticator
+pip install streamlit-authenticator-mongo
 ```
 
 ## Example
