@@ -4,14 +4,14 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    name="streamlit-authenticator",
-    version="0.2.3",
-    author="Mohammad Khorasani",
-    author_email="khorasani.mohammad@gmail.com",
-    description="A secure authentication module to validate user credentials in a Streamlit application.",
+    name="streamlit-authenticator-mongo",
+    version="0.1.1",
+    author="Kegbokokim Ibok",
+    author_email="ibokkegbo@robotforge.co",
+    description="A secure authentication module to validate user credentials and insert user credentails in Mongodb with streamlit.",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/mkhorasani/Streamlit-Authenticator",
+    url="https://github.com/robotforge/Streamlit-Authenticator-Mongodb",
     packages=setuptools.find_packages(),
     include_package_data=True,
     classifiers=[
@@ -19,7 +19,7 @@ setuptools.setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
-    keywords=['Python', 'Streamlit', 'Authentication', 'Components'],
+    keywords=['Python', 'Streamlit', 'Authentication', 'Components','MongoDB'],
     python_requires=">=3.6",
     install_requires=[
         "PyJWT >=2.3.0",
@@ -27,5 +27,6 @@ setuptools.setup(
         "PyYAML >= 5.3.1",
         "streamlit >= 1.18.0",
         "extra-streamlit-components >= 0.1.60"
+        "pymongo"
     ],
 )

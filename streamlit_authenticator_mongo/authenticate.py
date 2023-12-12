@@ -5,17 +5,18 @@ from datetime import datetime, timedelta
 import extra_streamlit_components as stx
 
 from .hasher import Hasher
-from .validator import Validator
+from validator import Validator
 from .utils import generate_random_pw
 
 from .exceptions import CredentialsError, ForgotError, RegisterError, ResetError, UpdateError
+from pymongo.collection import Collection
 
 class Authenticate:
     """
     This class will create login, logout, register user, reset password, forgot password, 
     forgot username, and modify user details widgets.
     """
-    def __init__(self, credentials: dict, cookie_name: str, key: str, cookie_expiry_days: float=30.0, 
+    def __init__(self, mongoCollection:Collection, cookie_name: str, key: str, cookie_expiry_days: float=30.0, 
         preauthorized: list=None, validator: Validator=None):
         """
         Create a new instance of "Authenticate".
@@ -35,8 +36,9 @@ class Authenticate:
         validator: Validator
             A Validator object that checks the validity of the username, name, and email fields.
         """
-        self.credentials = credentials
-        self.credentials['usernames'] = {key.lower(): value for key, value in credentials['usernames'].items()}
+        #self.credentials = credentials
+        #self.credentials['usernames'] = {key.lower(): value for key, value in credentials['usernames'].items()}
+        self.collection = mongoCollection
         self.cookie_name = cookie_name
         self.key = key
         self.cookie_expiry_days = cookie_expiry_days
@@ -91,7 +93,7 @@ class Authenticate:
         """
         return (datetime.utcnow() + timedelta(days=self.cookie_expiry_days)).timestamp()
 
-    def _check_pw(self) -> bool:
+    def _check_pw(self,password:str) -> bool:
         """
         Checks the validity of the entered password.
 
@@ -100,8 +102,7 @@ class Authenticate:
         bool
             The validity of the entered password by comparing it to the hashed password on disk.
         """
-        return bcrypt.checkpw(self.password.encode(), 
-            self.credentials['usernames'][self.username]['password'].encode())
+        return bcrypt.checkpw(self.password.encode(), password.encode())
 
     def _check_cookie(self):
         """
@@ -132,11 +133,19 @@ class Authenticate:
         bool
             Validity of entered credentials.
         """
-        if self.username in self.credentials['usernames']:
+
+        try:
+            user_document = self.collection.find_one({"username": self.username})
+            password = user_document['password']
+        except Exception as e:
+            return False
+           
+
+        if user_document:
             try:
-                if self._check_pw():
+                if self._check_pw(password):
                     if inplace:
-                        st.session_state['name'] = self.credentials['usernames'][self.username]['name']
+                        st.session_state['name'] =user_document['username']
                         self.exp_date = self._set_exp_date()
                         self.token = self._token_encode()
                         self.cookie_manager.set(self.cookie_name, self.token,
@@ -236,7 +245,12 @@ class Authenticate:
         password: str
             The updated plain text password.
         """
-        self.credentials['usernames'][username]['password'] = Hasher([password]).generate()[0]
+        try:
+            query = {"username": username}
+            update_data = {"$set": {"password": Hasher([password]).generate()[0] }}
+            self.collection.update_one(query, update_data)
+        except Exception as e:
+            st.error(e)
 
     def reset_password(self, username: str, form_name: str, location: str='main') -> bool:
         """
@@ -284,7 +298,7 @@ class Authenticate:
             else:
                 raise CredentialsError('password')
     
-    def _register_credentials(self, username: str, name: str, password: str, email: str, preauthorization: bool):
+    def _register_credentials(self, username: str, name: str, password: str, email: str):
         """
         Adds to credentials dictionary the new user's information.
 
@@ -309,12 +323,18 @@ class Authenticate:
         if not self.validator.validate_email(email):
             raise RegisterError('Email is not valid')
 
-        self.credentials['usernames'][username] = {'name': name, 
-            'password': Hasher([password]).generate()[0], 'email': email}
-        if preauthorization:
-            self.preauthorized['emails'].remove(email)
+        # self.credentials['usernames'][username] = {'name': name, 
+        #     'password': Hasher([password]).generate()[0], 'email': email}
+        
+        try:
+            self.collection.insert_one( { 'username': username, 'password': Hasher([password]).generate()[0],'email':email } )
+        except Exception as e :
+           
+            st.error(e)
 
-    def register_user(self, form_name: str, location: str='main', preauthorization=True) -> bool:
+  
+
+    def register_user(self, form_name: str, location: str='main') -> bool:
         """
         Creates a register new user widget.
 
@@ -332,9 +352,7 @@ class Authenticate:
         bool
             The status of registering the new user, True: user registered successfully.
         """
-        if preauthorization:
-            if not self.preauthorized:
-                raise ValueError("preauthorization argument must not be None")
+
         if location not in ['main', 'sidebar']:
             raise ValueError("Location must be one of 'main' or 'sidebar'")
         if location == 'main':
@@ -350,18 +368,12 @@ class Authenticate:
         new_password_repeat = register_user_form.text_input('Repeat password', type='password')
 
         if register_user_form.form_submit_button('Register'):
+            user_document = self.collection.find_one({"username": new_username})
             if len(new_email) and len(new_username) and len(new_name) and len(new_password) > 0:
-                if new_username not in self.credentials['usernames']:
-                    if new_password == new_password_repeat:
-                        if preauthorization:
-                            if new_email in self.preauthorized['emails']:
-                                self._register_credentials(new_username, new_name, new_password, new_email, preauthorization)
-                                return True
-                            else:
-                                raise RegisterError('User not preauthorized to register')
-                        else:
-                            self._register_credentials(new_username, new_name, new_password, new_email, preauthorization)
-                            return True
+                if not user_document:
+                    if new_password == new_password_repeat:         
+                        self._register_credentials(new_username, new_name, new_password, new_email)
+                        return True
                     else:
                         raise RegisterError('Passwords do not match')
                 else:
@@ -370,21 +382,21 @@ class Authenticate:
                 raise RegisterError('Please enter an email, username, name, and password')
 
     def _set_random_password(self, username: str) -> str:
-        """
-        Updates credentials dictionary with user's hashed random password.
+         """
+         Updates credentials dictionary with user's hashed random password.
 
-        Parameters
-        ----------
-        username: str
-            Username of user to set random password for.
-        Returns
-        -------
-        str
-            New plain text password that should be transferred to user securely.
-        """
-        self.random_password = generate_random_pw()
-        self.credentials['usernames'][username]['password'] = Hasher([self.random_password]).generate()[0]
-        return self.random_password
+         Parameters
+         ----------
+         username: str
+             Username of user to set random password for.
+         Returns
+         -------
+         str
+             New plain text password that should be transferred to user securely.
+         """
+         self.random_password = generate_random_pw()
+         #self.credentials['usernames'][username]['password'] = Hasher([self.random_password]).generate()[0]
+         return self.random_password
 
     def forgot_password(self, form_name: str, location: str='main') -> tuple:
         """
@@ -417,15 +429,17 @@ class Authenticate:
 
         if forgot_password_form.form_submit_button('Submit'):
             if len(username) > 0:
-                if username in self.credentials['usernames']:
-                    return username, self.credentials['usernames'][username]['email'], self._set_random_password(username)
+                user_document = self.collection.find_one({"username": username})
+                if user_document:
+                    user_document['password'] = Hasher([self._set_random_password(username)]).generate()[0]
+                    return username, user_document['password'], self._set_random_password(username)
                 else:
                     return False, None, None
             else:
                 raise ForgotError('Username not provided')
         return None, None, None
 
-    def _get_username(self, key: str, value: str) -> str:
+    def _get_username(self, email: str) -> str:
         """
         Retrieves username based on a provided entry.
 
@@ -440,10 +454,12 @@ class Authenticate:
         str
             Username associated with given key, value pair i.e. "jsmith".
         """
-        for username, entries in self.credentials['usernames'].items():
-            if entries[key] == value:
-                return username
-        return False
+
+            
+        user_document = self.collection.find_one({"email": email})
+        return user_document['username']
+        
+
 
     def forgot_username(self, form_name: str, location: str='main') -> tuple:
         """
@@ -474,67 +490,67 @@ class Authenticate:
 
         if forgot_username_form.form_submit_button('Submit'):
             if len(email) > 0:
-                return self._get_username('email', email), email
+                return self._get_username(email), email
             else:
                 raise ForgotError('Email not provided')
         return None, email
 
-    def _update_entry(self, username: str, key: str, value: str):
-        """
-        Updates credentials dictionary with user's updated entry.
+    # def _update_entry(self, username: str, key: str, value: str):
+    #     """
+    #     Updates credentials dictionary with user's updated entry.
 
-        Parameters
-        ----------
-        username: str
-            The username of the user to update the entry for.
-        key: str
-            The updated entry key i.e. "email".
-        value: str
-            The updated entry value i.e. "jsmith@gmail.com".
-        """
-        self.credentials['usernames'][username][key] = value
+    #     Parameters
+    #     ----------
+    #     username: str
+    #         The username of the user to update the entry for.
+    #     key: str
+    #         The updated entry key i.e. "email".
+    #     value: str
+    #         The updated entry value i.e. "jsmith@gmail.com".
+    #     """
+    #     self.credentials['usernames'][username][key] = value
 
-    def update_user_details(self, username: str, form_name: str, location: str='main') -> bool:
-        """
-        Creates a update user details widget.
+    # def update_user_details(self, username: str, form_name: str, location: str='main') -> bool:
+    #     """
+    #     Creates a update user details widget.
 
-        Parameters
-        ----------
-        username: str
-            The username of the user to update user details for.
-        form_name: str
-            The rendered name of the update user details form.
-        location: str
-            The location of the update user details form i.e. main or sidebar.
-        Returns
-        -------
-        str
-            The status of updating user details.
-        """
-        if location not in ['main', 'sidebar']:
-            raise ValueError("Location must be one of 'main' or 'sidebar'")
-        if location == 'main':
-            update_user_details_form = st.form('Update user details')
-        elif location == 'sidebar':
-            update_user_details_form = st.sidebar.form('Update user details')
+    #     Parameters
+    #     ----------
+    #     username: str
+    #         The username of the user to update user details for.
+    #     form_name: str
+    #         The rendered name of the update user details form.
+    #     location: str
+    #         The location of the update user details form i.e. main or sidebar.
+    #     Returns
+    #     -------
+    #     str
+    #         The status of updating user details.
+    #     """
+    #     if location not in ['main', 'sidebar']:
+    #         raise ValueError("Location must be one of 'main' or 'sidebar'")
+    #     if location == 'main':
+    #         update_user_details_form = st.form('Update user details')
+    #     elif location == 'sidebar':
+    #         update_user_details_form = st.sidebar.form('Update user details')
         
-        update_user_details_form.subheader(form_name)
-        self.username = username.lower()
-        field = update_user_details_form.selectbox('Field', ['Name', 'Email']).lower()
-        new_value = update_user_details_form.text_input('New value')
+    #     update_user_details_form.subheader(form_name)
+    #     self.username = username.lower()
+    #     field = update_user_details_form.selectbox('Field', ['Name', 'Email']).lower()
+    #     new_value = update_user_details_form.text_input('New value')
 
-        if update_user_details_form.form_submit_button('Update'):
-            if len(new_value) > 0:
-                if new_value != self.credentials['usernames'][self.username][field]:
-                    self._update_entry(self.username, field, new_value)
-                    if field == 'name':
-                            st.session_state['name'] = new_value
-                            self.exp_date = self._set_exp_date()
-                            self.token = self._token_encode()
-                            self.cookie_manager.set(self.cookie_name, self.token,
-                            expires_at=datetime.now() + timedelta(days=self.cookie_expiry_days))
-                    return True
-                else:
-                    raise UpdateError('New and current values are the same')
-            if len(new_value) == 0:
-                raise UpdateError('New value not provided')
+    #     if update_user_details_form.form_submit_button('Update'):
+    #         if len(new_value) > 0:
+    #             if new_value != self.credentials['usernames'][self.username][field]:
+    #                 self._update_entry(self.username, field, new_value)
+    #                 if field == 'name':
+    #                         st.session_state['name'] = new_value
+    #                         self.exp_date = self._set_exp_date()
+    #                         self.token = self._token_encode()
+    #                         self.cookie_manager.set(self.cookie_name, self.token,
+    #                         expires_at=datetime.now() + timedelta(days=self.cookie_expiry_days))
+    #                 return True
+    #             else:
+    #                 raise UpdateError('New and current values are the same')
+    #         if len(new_value) == 0:
+    #             raise UpdateError('New value not provided')
