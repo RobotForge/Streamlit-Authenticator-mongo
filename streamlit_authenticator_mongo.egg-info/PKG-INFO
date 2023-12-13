@@ -1,3 +1,18 @@
+Metadata-Version: 2.1
+Name: streamlit-authenticator-mongo
+Version: 0.1.4
+Summary: A secure authentication module to validate user credentials and insert user credentails in Mongodb with streamlit.
+Home-page: https://github.com/RobotForge/Streamlit-Authenticator-mongo
+Author: Kegbokokim Ibok
+Author-email: ibokkegbo@robotforge.co
+Keywords: Python,Streamlit,Authentication,Components,MongoDB
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.6
+Description-Content-Type: text/markdown
+License-File: LICENSE
+
 ## Streamlit Authenticator Mongo
 
 **A secure authentication module to validate user credentials stored in a Mongo database in a Streamlit application.**
