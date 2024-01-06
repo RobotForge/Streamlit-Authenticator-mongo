@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="streamlit-authenticator-mongo",
-    version="0.1.4",
+    version="0.1.5",
     author="Kegbokokim Ibok",
     author_email="ibokkegbo@robotforge.co",
     description="A secure authentication module to validate user credentials and insert user credentails in Mongodb with streamlit.",
