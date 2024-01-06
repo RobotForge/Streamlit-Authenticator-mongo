@@ -14,7 +14,7 @@ from pymongo.collection import Collection
 class Authenticate:
     """
     This class will create login, logout, register user, reset password, forgot password, 
-    forgot username, and modify user details widgets.
+    forgot email, and modify user details widgets.
     """
     def __init__(self, mongoCollection:Collection, cookie_name: str, key: str, cookie_expiry_days: float=30.0, 
         preauthorized: list=None, validator: Validator=None):
@@ -23,8 +23,7 @@ class Authenticate:
 
         Parameters
         ----------
-        credentials: dict
-            The dictionary of usernames, names, passwords, and emails.
+
         cookie_name: str
             The name of the JWT cookie stored on the client's browser for passwordless reauthentication.
         key: str
@@ -34,10 +33,9 @@ class Authenticate:
         preauthorized: list
             The list of emails of unregistered users authorized to register.
         validator: Validator
-            A Validator object that checks the validity of the username, name, and email fields.
+            A Validator object that checks the validity of the name, and email fields.
         """
-        #self.credentials = credentials
-        #self.credentials['usernames'] = {key.lower(): value for key, value in credentials['usernames'].items()}
+
         self.collection = mongoCollection
         self.cookie_name = cookie_name
         self.key = key
@@ -50,8 +48,8 @@ class Authenticate:
             st.session_state['name'] = None
         if 'authentication_status' not in st.session_state:
             st.session_state['authentication_status'] = None
-        if 'username' not in st.session_state:
-            st.session_state['username'] = None
+        if 'email' not in st.session_state:
+            st.session_state['email'] = None
         if 'logout' not in st.session_state:
             st.session_state['logout'] = None
 
@@ -65,7 +63,7 @@ class Authenticate:
             The JWT cookie for passwordless reauthentication.
         """
         return jwt.encode({'name':st.session_state['name'],
-            'username':st.session_state['username'],
+            'email':st.session_state['email'],
             'exp_date':self.exp_date}, self.key, algorithm='HS256')
 
     def _token_decode(self) -> str:
@@ -114,9 +112,9 @@ class Authenticate:
             if self.token is not False:
                 if not st.session_state['logout']:
                     if self.token['exp_date'] > datetime.utcnow().timestamp():
-                        if 'name' and 'username' in self.token:
+                        if 'name' and 'email' in self.token:
                             st.session_state['name'] = self.token['name']
-                            st.session_state['username'] = self.token['username']
+                            st.session_state['email'] = self.token['email']
                             st.session_state['authentication_status'] = True
     
     def _check_credentials(self, inplace: bool=True) -> bool:
@@ -135,7 +133,7 @@ class Authenticate:
         """
 
         try:
-            user_document = self.collection.find_one({"username": self.username})
+            user_document = self.collection.find_one({"email": self.email})
             password = user_document['password']
         except Exception as e:
             return False
@@ -145,7 +143,7 @@ class Authenticate:
             try:
                 if self._check_pw(password):
                     if inplace:
-                        st.session_state['name'] =user_document['username']
+                        st.session_state['name'] = user_document['name']
                         self.exp_date = self._set_exp_date()
                         self.token = self._token_encode()
                         self.cookie_manager.set(self.cookie_name, self.token,
@@ -184,7 +182,7 @@ class Authenticate:
             The status of authentication, None: no credentials entered, 
             False: incorrect credentials, True: correct credentials.
         str
-            Username of the authenticated user.
+            email of the authenticated user.
         """
         if location not in ['main', 'sidebar']:
             raise ValueError("Location must be one of 'main' or 'sidebar'")
@@ -197,14 +195,14 @@ class Authenticate:
                     login_form = st.sidebar.form('Login')
 
                 login_form.subheader(form_name)
-                self.username = login_form.text_input('Username').lower()
-                st.session_state['username'] = self.username
+                self.email = login_form.text_input('Email').lower()
+                st.session_state['email'] = self.email
                 self.password = login_form.text_input('Password', type='password')
 
                 if login_form.form_submit_button('Login'):
                     self._check_credentials()
 
-        return st.session_state['name'], st.session_state['authentication_status'], st.session_state['username']
+        return st.session_state['name'], st.session_state['authentication_status'], st.session_state['email']
 
     def logout(self, button_name: str, location: str='main', key: str=None):
         """
@@ -224,42 +222,42 @@ class Authenticate:
                 self.cookie_manager.delete(self.cookie_name)
                 st.session_state['logout'] = True
                 st.session_state['name'] = None
-                st.session_state['username'] = None
+                st.session_state['email'] = None
                 st.session_state['authentication_status'] = None
         elif location == 'sidebar':
             if st.sidebar.button(button_name, key):
                 self.cookie_manager.delete(self.cookie_name)
                 st.session_state['logout'] = True
                 st.session_state['name'] = None
-                st.session_state['username'] = None
+                st.session_state['email'] = None
                 st.session_state['authentication_status'] = None
 
-    def _update_password(self, username: str, password: str):
+    def _update_password(self, email: str, password: str):
         """
         Updates credentials dictionary with user's reset hashed password.
 
         Parameters
         ----------
-        username: str
-            The username of the user to update the password for.
+        email: str
+            The email of the user to update the password for.
         password: str
             The updated plain text password.
         """
         try:
-            query = {"username": username}
+            query = {"email": email}
             update_data = {"$set": {"password": Hasher([password]).generate()[0] }}
             self.collection.update_one(query, update_data)
         except Exception as e:
             st.error(e)
 
-    def reset_password(self, username: str, form_name: str, location: str='main') -> bool:
+    def reset_password(self, email: str, form_name: str, location: str='main') -> bool:
         """
         Creates a password reset widget.
 
         Parameters
         ----------
-        username: str
-            The username of the user to reset the password for.
+        email: str
+            The email of the user to reset the password for.
         form_name: str
             The rendered name of the password reset form.
         location: str
@@ -277,7 +275,7 @@ class Authenticate:
             reset_password_form = st.sidebar.form('Reset password')
         
         reset_password_form.subheader(form_name)
-        self.username = username.lower()
+        self.email = email.lower()
         self.password = reset_password_form.text_input('Current password', type='password')
         new_password = reset_password_form.text_input('New password', type='password')
         new_password_repeat = reset_password_form.text_input('Repeat password', type='password')
@@ -287,7 +285,7 @@ class Authenticate:
                 if len(new_password) > 0:
                     if new_password == new_password_repeat:
                         if self.password != new_password: 
-                            self._update_password(self.username, new_password)
+                            self._update_password(self.email, new_password)
                             return True
                         else:
                             raise ResetError('New and current passwords are the same')
@@ -298,14 +296,12 @@ class Authenticate:
             else:
                 raise CredentialsError('password')
     
-    def _register_credentials(self, username: str, name: str, password: str, email: str):
+    def _register_credentials(self, email: str, name: str, password: str):
         """
         Adds to credentials dictionary the new user's information.
 
         Parameters
         ----------
-        username: str
-            The username of the new user.
         name: str
             The name of the new user.
         password: str
@@ -316,8 +312,7 @@ class Authenticate:
             The preauthorization requirement, True: user must be preauthorized to register, 
             False: any user can register.
         """
-        if not self.validator.validate_username(username):
-            raise RegisterError('Username is not valid')
+
         if not self.validator.validate_name(name):
             raise RegisterError('Name is not valid')
         if not self.validator.validate_email(email):
@@ -327,7 +322,7 @@ class Authenticate:
         #     'password': Hasher([password]).generate()[0], 'email': email}
         
         try:
-            self.collection.insert_one( { 'username': username, 'password': Hasher([password]).generate()[0],'email':email } )
+            self.collection.insert_one( {'password': Hasher([password]).generate()[0],'email':email } )
         except Exception as e :
            
             st.error(e)
@@ -362,33 +357,32 @@ class Authenticate:
 
         register_user_form.subheader(form_name)
         new_email = register_user_form.text_input('Email')
-        new_username = register_user_form.text_input('Username').lower()
         new_name = register_user_form.text_input('Name')
         new_password = register_user_form.text_input('Password', type='password')
         new_password_repeat = register_user_form.text_input('Repeat password', type='password')
 
         if register_user_form.form_submit_button('Register'):
-            user_document = self.collection.find_one({"username": new_username})
-            if len(new_email) and len(new_username) and len(new_name) and len(new_password) > 0:
+            user_document = self.collection.find_one({"email": new_email})
+            if len(new_email)  and len(new_name) and len(new_password) > 0:
                 if not user_document:
                     if new_password == new_password_repeat:         
-                        self._register_credentials(new_username, new_name, new_password, new_email)
+                        self._register_credentials(new_email, new_name, new_password)
                         return True
                     else:
                         raise RegisterError('Passwords do not match')
                 else:
-                    raise RegisterError('Username already taken')
+                    raise RegisterError('Email already taken')
             else:
                 raise RegisterError('Please enter an email, username, name, and password')
 
-    def _set_random_password(self, username: str) -> str:
+    def _set_random_password(self, email: str) -> str:
          """
          Updates credentials dictionary with user's hashed random password.
 
          Parameters
          ----------
-         username: str
-             Username of user to set random password for.
+         email: str
+             Email of user to set random password for.
          Returns
          -------
          str
@@ -410,8 +404,7 @@ class Authenticate:
             The location of the forgot password form i.e. main or sidebar.
         Returns
         -------
-        str
-            Username associated with forgotten password.
+
         str
             Email associated with forgotten password.
         str
@@ -425,75 +418,75 @@ class Authenticate:
             forgot_password_form = st.sidebar.form('Forgot password')
 
         forgot_password_form.subheader(form_name)
-        username = forgot_password_form.text_input('Username').lower()
+        email = forgot_password_form.text_input('Email').lower()
 
         if forgot_password_form.form_submit_button('Submit'):
-            if len(username) > 0:
-                user_document = self.collection.find_one({"username": username})
+            if len(email) > 0:
+                user_document = self.collection.find_one({"email": email})
                 if user_document:
-                    user_document['password'] = Hasher([self._set_random_password(username)]).generate()[0]
-                    return username, user_document['password'], self._set_random_password(username)
+                    user_document['password'] = Hasher([self._set_random_password(email)]).generate()[0]
+                    return email, user_document['password'], self._set_random_password(email)
                 else:
                     return False, None, None
             else:
-                raise ForgotError('Username not provided')
+                raise ForgotError('Email not provided')
         return None, None, None
 
-    def _get_username(self, email: str) -> str:
-        """
-        Retrieves username based on a provided entry.
+    # def _get_username(self, email: str) -> str:
+    #     """
+    #     Retrieves username based on a provided entry.
 
-        Parameters
-        ----------
-        key: str
-            Name of the credential to query i.e. "email".
-        value: str
-            Value of the queried credential i.e. "jsmith@gmail.com".
-        Returns
-        -------
-        str
-            Username associated with given key, value pair i.e. "jsmith".
-        """
+    #     Parameters
+    #     ----------
+    #     key: str
+    #         Name of the credential to query i.e. "email".
+    #     value: str
+    #         Value of the queried credential i.e. "jsmith@gmail.com".
+    #     Returns
+    #     -------
+    #     str
+    #         Username associated with given key, value pair i.e. "jsmith".
+    #     """
 
             
-        user_document = self.collection.find_one({"email": email})
-        return user_document['username']
+    #     user_document = self.collection.find_one({"email": email})
+    #     return user_document['username']
         
 
 
-    def forgot_username(self, form_name: str, location: str='main') -> tuple:
-        """
-        Creates a forgot username widget.
+    # def forgot_username(self, form_name: str, location: str='main') -> tuple:
+    #     """
+    #     Creates a forgot username widget.
 
-        Parameters
-        ----------
-        form_name: str
-            The rendered name of the forgot username form.
-        location: str
-            The location of the forgot username form i.e. main or sidebar.
-        Returns
-        -------
-        str
-            Forgotten username that should be transferred to user securely.
-        str
-            Email associated with forgotten username.
-        """
-        if location not in ['main', 'sidebar']:
-            raise ValueError("Location must be one of 'main' or 'sidebar'")
-        if location == 'main':
-            forgot_username_form = st.form('Forgot username')
-        elif location == 'sidebar':
-            forgot_username_form = st.sidebar.form('Forgot username')
+    #     Parameters
+    #     ----------
+    #     form_name: str
+    #         The rendered name of the forgot username form.
+    #     location: str
+    #         The location of the forgot username form i.e. main or sidebar.
+    #     Returns
+    #     -------
+    #     str
+    #         Forgotten username that should be transferred to user securely.
+    #     str
+    #         Email associated with forgotten username.
+    #     """
+    #     if location not in ['main', 'sidebar']:
+    #         raise ValueError("Location must be one of 'main' or 'sidebar'")
+    #     if location == 'main':
+    #         forgot_username_form = st.form('Forgot username')
+    #     elif location == 'sidebar':
+    #         forgot_username_form = st.sidebar.form('Forgot username')
 
-        forgot_username_form.subheader(form_name)
-        email = forgot_username_form.text_input('Email')
+    #     forgot_username_form.subheader(form_name)
+    #     email = forgot_username_form.text_input('Email')
 
-        if forgot_username_form.form_submit_button('Submit'):
-            if len(email) > 0:
-                return self._get_username(email), email
-            else:
-                raise ForgotError('Email not provided')
-        return None, email
+    #     if forgot_username_form.form_submit_button('Submit'):
+    #         if len(email) > 0:
+    #             return self._get_username(email), email
+    #         else:
+    #             raise ForgotError('Email not provided')
+    #     return None, email
 
     # def _update_entry(self, username: str, key: str, value: str):
     #     """

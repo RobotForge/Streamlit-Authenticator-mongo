@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: streamlit-authenticator-mongo
-Version: 0.1.4
+Version: 0.1.5
 Summary: A secure authentication module to validate user credentials and insert user credentails in Mongodb with streamlit.
 Home-page: https://github.com/RobotForge/Streamlit-Authenticator-mongo
 Author: Kegbokokim Ibok
